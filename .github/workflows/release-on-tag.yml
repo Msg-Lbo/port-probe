@@ -27,12 +27,17 @@ jobs:
       - name: Resolve Qt paths
         shell: pwsh
         run: |
-          $qt5Config = Get-ChildItem -Path "C:/Qt" -Recurse -Filter "Qt5Config.cmake" | Select-Object -First 1
-          if (-not $qt5Config) {
-            throw "Qt5Config.cmake not found after Qt setup"
+          if (-not $env:QT_ROOT_DIR) {
+            throw "QT_ROOT_DIR is missing. install-qt-action may have failed."
           }
-          $qt5Dir = Split-Path -Parent $qt5Config.FullName
-          $qtBinDir = Join-Path (Split-Path -Parent (Split-Path -Parent $qt5Dir)) "bin"
+          $qt5Dir = Join-Path $env:QT_ROOT_DIR "lib/cmake/Qt5"
+          $qtBinDir = Join-Path $env:QT_ROOT_DIR "bin"
+          if (-not (Test-Path $qt5Dir)) {
+            throw "Qt5 cmake dir not found: $qt5Dir"
+          }
+          if (-not (Test-Path $qtBinDir)) {
+            throw "Qt bin dir not found: $qtBinDir"
+          }
 
           "QT5_DIR=$qt5Dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "QT_BIN_DIR=$qtBinDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
