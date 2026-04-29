@@ -28,8 +28,47 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QHBoxLayout>
 #include <QStringList>
+#include <QStyledItemDelegate>
+#include <QPainter>
+#include <QStyleOptionButton>
 
 namespace pp {
+
+class CenteredCheckDelegate : public QStyledItemDelegate {
+public:
+    explicit CenteredCheckDelegate(QObject* parent = nullptr) : QStyledItemDelegate(parent) {}
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        if (index.column() != DeviceTableModel::Selected) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+        painter->save();
+        if (option.state & QStyle::State_Selected) {
+            painter->fillRect(option.rect, option.palette.highlight());
+        } else {
+            painter->fillRect(option.rect, option.palette.base());
+        }
+        QStyleOptionButton check;
+        check.state = QStyle::State_Enabled;
+        const Qt::CheckState state = static_cast<Qt::CheckState>(index.data(Qt::CheckStateRole).toInt());
+        if (state == Qt::Checked) {
+            check.state |= QStyle::State_On;
+        } else {
+            check.state |= QStyle::State_Off;
+        }
+        const int indicatorW = option.widget->style()->pixelMetric(QStyle::PM_IndicatorWidth);
+        const int indicatorH = option.widget->style()->pixelMetric(QStyle::PM_IndicatorHeight);
+        check.rect = QRect(
+            option.rect.x() + (option.rect.width() - indicatorW) / 2,
+            option.rect.y() + (option.rect.height() - indicatorH) / 2,
+            indicatorW,
+            indicatorH);
+        option.widget->style()->drawControl(QStyle::CE_CheckBox, &check, painter, option.widget);
+        painter->restore();
+    }
+};
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 {
@@ -38,10 +77,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     auto* central = new QWidget(this);
     auto* v = new QVBoxLayout(central);
+    v->setContentsMargins(14, 14, 14, 14);
+    v->setSpacing(10);
 
     auto* topBar = new QWidget(central);
+    topBar->setObjectName("topBarCard");
     auto* top = new QHBoxLayout(topBar);
-    top->setContentsMargins(0, 0, 0, 0);
+    top->setContentsMargins(10, 10, 10, 10);
+    top->setSpacing(8);
 
     _ifaceCombo = new QComboBox(topBar);
     _ifaceCombo->setMinimumWidth(360);
@@ -49,6 +92,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     _detectBtn = new QPushButton(QStringLiteral("探测"), topBar);
     _configBtn = new QPushButton(QStringLiteral("探测配置"), topBar);
     _qrBtn = new QPushButton(QStringLiteral("生成二维码"), topBar);
+    _refreshBtn->setMinimumWidth(88);
+    _detectBtn->setMinimumWidth(72);
+    _qrBtn->setMinimumWidth(108);
+    _configBtn->setMinimumWidth(108);
 
     top->addWidget(_ifaceCombo);
     top->addWidget(_refreshBtn);
@@ -59,6 +106,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     topBar->setLayout(top);
 
     _status = new QLabel(QStringLiteral(""), central);
+    _status->setObjectName("statusCard");
     _status->setMinimumHeight(22);
 
     _model = new DeviceTableModel(this);
@@ -67,6 +115,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     _table->setModel(_model);
     _table->setSelectionBehavior(QAbstractItemView::SelectItems);
     _table->setSelectionMode(QAbstractItemView::SingleSelection);
+    _table->setItemDelegateForColumn(DeviceTableModel::Selected, new CenteredCheckDelegate(_table));
     _table->horizontalHeader()->setStretchLastSection(true);
     _table->horizontalHeader()->setDefaultSectionSize(160);
     _table->setColumnWidth(DeviceTableModel::Selected, 56);
@@ -313,4 +362,3 @@ void MainWindow::copyRow()
 }
 
 } // namespace pp
-

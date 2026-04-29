@@ -25,6 +25,12 @@ QVariant DeviceTableModel::data(const QModelIndex& index, int role) const
         }
         return Qt::Unchecked;
     }
+    if (role == Qt::TextAlignmentRole) {
+        if (index.column() == Selected) {
+            return static_cast<int>(Qt::AlignCenter);
+        }
+        return static_cast<int>(Qt::AlignVCenter | Qt::AlignLeft);
+    }
     if (role != Qt::DisplayRole) {
         return {};
     }

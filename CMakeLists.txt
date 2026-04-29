@@ -14,7 +14,18 @@ endif()
 # Win7 release target: require Qt5 explicitly.
 find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Network)
 
+set(APP_ICON_SOURCE app_icon.rc)
+
+if(MINGW)
+  get_filename_component(_cxx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+  if(EXISTS "${_cxx_dir}/windres.exe")
+    set(CMAKE_RC_COMPILER "${_cxx_dir}/windres.exe" CACHE FILEPATH "RC compiler" FORCE)
+  endif()
+endif()
+
 add_executable(PortProbeQt WIN32
+  ${APP_ICON_SOURCE}
+  app/resources.qrc
   app/main.cpp
   app/MainWindow.h
   app/MainWindow.cpp
