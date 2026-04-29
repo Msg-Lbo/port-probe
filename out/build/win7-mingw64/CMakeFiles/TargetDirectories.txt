@@ -1,0 +1,5 @@
+D:/Desktop/端口探测工具/out/build/win7-mingw64/CMakeFiles/PortProbeQt.dir
+D:/Desktop/端口探测工具/out/build/win7-mingw64/CMakeFiles/edit_cache.dir
+D:/Desktop/端口探测工具/out/build/win7-mingw64/CMakeFiles/rebuild_cache.dir
+D:/Desktop/端口探测工具/out/build/win7-mingw64/CMakeFiles/PortProbeQt_autogen_timestamp_deps.dir
+D:/Desktop/端口探测工具/out/build/win7-mingw64/CMakeFiles/PortProbeQt_autogen.dir

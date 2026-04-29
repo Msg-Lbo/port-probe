@@ -1,0 +1,10 @@
+^D:\DESKTOP\端口探测工具\OUT\BUILD\VS-DEBUG\CMAKEFILES\C34ACF35CC4255516CF55FC419924845\GENERATE.STAMP.RULE
+setlocal
+"D:\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/Desktop/端口探测工具 -BD:/Desktop/端口探测工具/out/build/vs-Debug --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/Desktop/端口探测工具/out/build/vs-Debug/PortProbeQt.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

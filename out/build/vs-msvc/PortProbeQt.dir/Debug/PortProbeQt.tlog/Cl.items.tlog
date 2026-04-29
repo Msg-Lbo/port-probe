@@ -1,0 +1,12 @@
+D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt_autogen\mocs_compilation_Debug.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\mocs_compilation_Debug.obj
+D:\Desktop\端口探测工具\app\main.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\main.obj
+D:\Desktop\端口探测工具\app\MainWindow.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\MainWindow.obj
+D:\Desktop\端口探测工具\app\ConfigDialog.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\ConfigDialog.obj
+D:\Desktop\端口探测工具\app\QrCodeDialog.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\QrCodeDialog.obj
+D:\Desktop\端口探测工具\app\DeviceTableModel.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\DeviceTableModel.obj
+D:\Desktop\端口探测工具\core\Hex.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\Hex.obj
+D:\Desktop\端口探测工具\core\SettingsStore.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\SettingsStore.obj
+D:\Desktop\端口探测工具\core\NicService.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\NicService.obj
+D:\Desktop\端口探测工具\core\UdpScanner.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\UdpScanner.obj
+D:\Desktop\端口探测工具\core\DeviceParser.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\DeviceParser.obj
+D:\Desktop\端口探测工具\core\Admin.cpp;D:\Desktop\端口探测工具\out\build\vs-msvc\PortProbeQt.dir\Debug\Admin.obj
