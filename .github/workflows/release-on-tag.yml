@@ -37,7 +37,7 @@ jobs:
           $qtToolsDir = Join-Path $qtBaseDir "Tools"
           $gccExe = Get-ChildItem -Path $qtToolsDir -Recurse -Filter "gcc.exe" | Select-Object -First 1
           $gxxExe = Get-ChildItem -Path $qtToolsDir -Recurse -Filter "g++.exe" | Select-Object -First 1
-          $ninjaExe = Get-ChildItem -Path $qtToolsDir -Recurse -Filter "ninja.exe" | Select-Object -First 1
+          $mingwMakeExe = Get-ChildItem -Path $qtToolsDir -Recurse -Filter "mingw32-make.exe" | Select-Object -First 1
           if (-not (Test-Path $qt5Dir)) {
             throw "Qt5 cmake dir not found: $qt5Dir"
           }
@@ -50,20 +50,20 @@ jobs:
           if (-not $gxxExe) {
             throw "g++.exe not found under: $qtToolsDir"
           }
-          if (-not $ninjaExe) {
-            throw "ninja.exe not found under: $qtToolsDir"
+          if (-not $mingwMakeExe) {
+            throw "mingw32-make.exe not found under: $qtToolsDir"
           }
 
           "QT5_DIR=$qt5Dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "QT_BIN_DIR=$qtBinDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "GCC_EXE=$($gccExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "GXX_EXE=$($gxxExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "NINJA_EXE=$($ninjaExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "MINGW_MAKE_EXE=$($mingwMakeExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Configure (CMake)
         shell: pwsh
         run: |
-          cmake -S . -B build-qt-x64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${env:QT_ROOT_DIR}" -DCMAKE_MAKE_PROGRAM="${env:NINJA_EXE}" -DCMAKE_C_COMPILER="${env:GCC_EXE}" -DCMAKE_CXX_COMPILER="${env:GXX_EXE}"
+          cmake -S . -B build-qt-x64 -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${env:QT_ROOT_DIR}" -DCMAKE_MAKE_PROGRAM="${env:MINGW_MAKE_EXE}" -DCMAKE_C_COMPILER="${env:GCC_EXE}" -DCMAKE_CXX_COMPILER="${env:GXX_EXE}"
 
       - name: Build (Release)
         shell: pwsh
