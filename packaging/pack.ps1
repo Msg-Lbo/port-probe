@@ -125,11 +125,38 @@ else {
     }
   }
 
-  $mingwCandidates = @(
+  $mingwCandidates = @()
+
+  # Prefer environment-provided MinGW bin path in CI.
+  if ($env:GXX_EXE) {
+    $gxxDir = Split-Path -Parent $env:GXX_EXE
+    if ($gxxDir) {
+      $mingwCandidates += $gxxDir
+    }
+  }
+
+  # Derive Qt Tools directory from Qt bin path (works for both local and CI layouts).
+  $qtRoot = Split-Path -Parent $QtBinDir
+  $qtVersionRoot = Split-Path -Parent $qtRoot
+  $qtBaseRoot = Split-Path -Parent $qtVersionRoot
+  $qtToolsRoot = Join-Path $qtBaseRoot "Tools"
+  if (Test-Path $qtToolsRoot) {
+    $toolBins = Get-ChildItem -Path $qtToolsRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -eq "bin" } |
+      Select-Object -ExpandProperty FullName
+    if ($toolBins) {
+      $mingwCandidates += $toolBins
+    }
+  }
+
+  # Backward-compatible local fallback paths.
+  $mingwCandidates += @(
     "D:\Qt\Tools\mingw810_64\bin",
     "D:\Qt\Tools\mingw810_32\bin",
     "D:\Qt\Tools\mingw1310_64\bin"
   )
+
+  $mingwCandidates = $mingwCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
   $mingwRuntimeNames = @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll", "libgcc_s_dw2-1.dll")
   foreach ($dll in $mingwRuntimeNames) {
     $target = Join-Path $distDir $dll
@@ -167,4 +194,3 @@ if (Test-Path $bundlePath) {
 }
 Compress-Archive -Path (Join-Path $distDir "*") -DestinationPath $bundlePath -CompressionLevel Optimal
 Write-Host "Single-file bundle created: $bundlePath"
-
