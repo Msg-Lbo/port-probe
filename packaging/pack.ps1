@@ -203,13 +203,63 @@ else {
   $mingwCandidates = $mingwCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
   if ($Arch -eq "x64") {
     $mingwRuntimeNames = @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+    $opensslRuntimeNames = @("libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll")
   } else {
     $mingwRuntimeNames = @("libgcc_s_dw2-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+    $opensslRuntimeNames = @("libcrypto-1_1.dll", "libssl-1_1.dll")
   }
   foreach ($dll in $mingwRuntimeNames) {
     $target = Join-Path $distDir $dll
     if (Test-Path $target) { continue }
     foreach ($root in $mingwCandidates) {
+      $src = Join-Path $root $dll
+      if (Test-Path $src) {
+        Copy-Item $src $target -Force
+        break
+      }
+    }
+  }
+
+  # Qt 5 MinGW loads OpenSSL at runtime for HTTPS requests such as update checks.
+  # The OpenSSL DLLs shipped with the matching Qt MinGW toolchain live under opt\bin.
+  $opensslCandidates = @()
+  foreach ($root in $mingwCandidates) {
+    $opensslCandidates += $root
+
+    $toolRoot = Split-Path -Parent $root
+    if ($toolRoot) {
+      $opensslCandidates += (Join-Path $toolRoot "opt\bin")
+
+      $optRoot = Split-Path -Parent $toolRoot
+      if ($optRoot) {
+        $opensslCandidates += (Join-Path $optRoot "opt\bin")
+      }
+    }
+  }
+
+  if ($Arch -eq "x64") {
+    $opensslCandidates += @(
+      "D:\Qt\Tools\mingw810_64\opt\bin",
+      "D:\Qt\Tools\mingw1310_64\opt\bin",
+      "C:\Qt\Tools\mingw810_64\opt\bin",
+      "C:\Qt\Tools\mingw1310_64\opt\bin",
+      "C:\Program Files\OpenSSL-Win64\bin",
+      "C:\OpenSSL-Win64\bin"
+    )
+  } else {
+    $opensslCandidates += @(
+      "D:\Qt\Tools\mingw810_32\opt\bin",
+      "C:\Qt\Tools\mingw810_32\opt\bin",
+      "C:\Program Files (x86)\OpenSSL-Win32\bin",
+      "C:\OpenSSL-Win32\bin"
+    )
+  }
+
+  $opensslCandidates = $opensslCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+  foreach ($dll in $opensslRuntimeNames) {
+    $target = Join-Path $distDir $dll
+    if (Test-Path $target) { continue }
+    foreach ($root in $opensslCandidates) {
       $src = Join-Path $root $dll
       if (Test-Path $src) {
         Copy-Item $src $target -Force
@@ -234,6 +284,11 @@ if ($Toolchain -eq "msvc") {
     $required += @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
   } else {
     $required += @("libgcc_s_dw2-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+  }
+  if ($Arch -eq "x64") {
+    $required += @("libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll")
+  } else {
+    $required += @("libcrypto-1_1.dll", "libssl-1_1.dll")
   }
 }
 foreach ($r in $required) {
