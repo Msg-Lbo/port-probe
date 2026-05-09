@@ -49,7 +49,7 @@
 namespace pp {
 
 #ifndef APP_VERSION
-#define APP_VERSION "1.0.0"
+#define APP_VERSION "1.0.1"
 #endif
 
 static const char* kReleaseApiUrl = "https://api.github.com/repos/Msg-Lbo/port-probe/releases/latest";
@@ -716,8 +716,14 @@ void MainWindow::applyUpdateState()
     QString text = withVersionPrefix(currentVersion());
     if (_checkingUpdate) {
         text += QStringLiteral("  检测中");
+        _versionLabel->setToolTip(QStringLiteral("正在检测更新"));
     } else if (_hasUpdate) {
         text += QStringLiteral("  有新版本");
+        _versionLabel->setToolTip(_latestVersion.isEmpty()
+            ? QStringLiteral("发现新版本，点击查看更新")
+            : QStringLiteral("发现新版本 %1，点击查看更新").arg(withVersionPrefix(_latestVersion)));
+    } else {
+        _versionLabel->setToolTip(QStringLiteral("查看版本与更新"));
     }
     _versionLabel->setText(text);
 
