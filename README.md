@@ -84,15 +84,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/pack.ps1" -Arch x
 
 #### 3) 生成单文件安装包（Inno Setup 5）
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.ps1" -Arch x64 -Version 1.0.3 -IsccPath "D:/Inno Setup 5/ISCC.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.ps1" -Arch x64 -Version 1.0.4 -IsccPath "D:/Inno Setup 5/ISCC.exe"
 ```
 
 输出：
-- 安装包：`installer_output/ProbeTool_Setup_x64_v1.0.3.exe`
+- 安装包：`installer_output/ProbeTool_Setup_x64_v1.0.4.exe`
 - 压缩包：`dist/ProbeTool_x64_all_in_one.zip`
 
 ### 在线更新源配置
-默认更新源使用 GitHub Releases。若现场电脑无法访问 GitHub，或 Win7 TLS 环境不稳定，可以在程序同目录的 `config.ini` 里增加内网 HTTP 更新源：
+默认更新源使用 Gitee 上的 `update/latest.json`：
+
+```text
+https://gitee.com/msglbo/port-probe/raw/main/update/latest.json
+```
+
+若现场电脑也无法访问 Gitee，可以在程序同目录的 `config.ini` 里增加内网 HTTP 更新源：
 
 ```ini
 [update]

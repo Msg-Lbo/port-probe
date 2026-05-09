@@ -59,11 +59,12 @@
 namespace pp {
 
 #ifndef APP_VERSION
-#define APP_VERSION "1.0.3"
+#define APP_VERSION "1.0.4"
 #endif
 
 static const char* kReleaseApiUrl = "https://api.github.com/repos/Msg-Lbo/port-probe/releases/latest";
-static const char* kChangelogUrl = "https://raw.githubusercontent.com/Msg-Lbo/port-probe/main/CHANGELOG.md";
+static const char* kDefaultManifestUrl = "https://gitee.com/msglbo/port-probe/raw/main/update/latest.json";
+static const char* kChangelogUrl = "https://gitee.com/msglbo/port-probe/raw/main/CHANGELOG.md";
 static constexpr int kUpdateCheckTimeoutMs = 12000;
 static constexpr int kChangelogTimeoutMs = 8000;
 
@@ -656,9 +657,10 @@ void MainWindow::copyRow()
 QString MainWindow::configuredUpdateManifestUrl() const
 {
     const auto envUrl = qEnvironmentVariable("PROBE_TOOL_UPDATE_MANIFEST_URL").trimmed();
+    const auto defaultUrl = envUrl.isEmpty() ? QString::fromLatin1(kDefaultManifestUrl) : envUrl;
     QSettings settings(QApplication::applicationDirPath() + QStringLiteral("/config.ini"), QSettings::IniFormat);
     settings.beginGroup(QStringLiteral("update"));
-    const auto url = settings.value(QStringLiteral("manifest_url"), envUrl).toString().trimmed();
+    const auto url = settings.value(QStringLiteral("manifest_url"), defaultUrl).toString().trimmed();
     settings.endGroup();
     return url;
 }
@@ -789,7 +791,7 @@ void MainWindow::checkForUpdates(bool userInitiated)
             _checkingUpdate = false;
             _updateError = QStringLiteral("检测更新失败：%1").arg(reply->errorString());
             if (!useManifest) {
-                _updateError += QStringLiteral("\n如果这台电脑不能访问 GitHub，请在 config.ini 的 [update] 里配置 manifest_url，指向内网或代理服务器上的更新清单。");
+                _updateError += QStringLiteral("\n默认更新源使用 Gitee。若现场网络仍不可达，请在 config.ini 的 [update] 里配置 manifest_url，指向内网更新清单。");
             }
             if (_latestVersion.isEmpty()) {
                 _hasUpdate = false;

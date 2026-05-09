@@ -1,6 +1,6 @@
 {
-  "version": "1.0.3",
-  "download_url": "ProbeTool_Setup_x64_v1.0.3.exe",
+  "version": "1.0.4",
+  "download_url": "ProbeTool_Setup_x64_v1.0.4.exe",
   "release_url": "http://192.168.1.10/probe-tool/",
   "changelog": [
     "更新按钮改为应用内下载，并显示下载进度。",

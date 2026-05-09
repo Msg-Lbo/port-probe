@@ -1,0 +1,10 @@
+{
+  "version": "1.0.4",
+  "download_url": "https://gitee.com/msglbo/port-probe/releases/download/v1.0.4/ProbeTool_Setup_x64_v1.0.4.exe",
+  "release_url": "https://gitee.com/msglbo/port-probe/releases/tag/v1.0.4",
+  "changelog": [
+    "默认在线更新源切换到 Gitee，减少国内网络和代理依赖。",
+    "更新清单改为 Gitee update/latest.json，下载地址指向 Gitee Release 安装包。",
+    "保留 config.ini 的 manifest_url 覆盖能力，现场可继续切换到内网 HTTP 更新源。"
+  ]
+}
