@@ -35,9 +35,10 @@ jobs:
           $qtBinDir = Join-Path $env:QT_ROOT_DIR "bin"
           $qtBaseDir = Split-Path -Parent (Split-Path -Parent $env:QT_ROOT_DIR)
           $qtToolsDir = Join-Path $qtBaseDir "Tools"
-          $gccExe = Get-ChildItem -Path $qtToolsDir -Recurse -Filter "gcc.exe" | Select-Object -First 1
-          $gxxExe = Get-ChildItem -Path $qtToolsDir -Recurse -Filter "g++.exe" | Select-Object -First 1
-          $mingwMakeExe = Get-ChildItem -Path $qtToolsDir -Recurse -Filter "mingw32-make.exe" | Select-Object -First 1
+          $mingw81Bin = Join-Path $qtToolsDir "mingw810_64/bin"
+          $gccExe = Get-Item (Join-Path $mingw81Bin "gcc.exe") -ErrorAction SilentlyContinue
+          $gxxExe = Get-Item (Join-Path $mingw81Bin "g++.exe") -ErrorAction SilentlyContinue
+          $mingwMakeExe = Get-Item (Join-Path $mingw81Bin "mingw32-make.exe") -ErrorAction SilentlyContinue
           if (-not (Test-Path $qt5Dir)) {
             throw "Qt5 cmake dir not found: $qt5Dir"
           }
@@ -81,7 +82,7 @@ jobs:
         shell: pwsh
         run: |
           $installer = Join-Path $env:RUNNER_TEMP "isetup-5.6.1.exe"
-          Invoke-WebRequest -Uri "https://files.jrsoftware.org/is/5/isetup-5.6.1.exe" -OutFile $installer
+          Invoke-WebRequest -Uri "https://files.jrsoftware.org/is/5/innosetup-5.6.1-unicode.exe" -OutFile $installer
           Start-Process -FilePath $installer -Wait -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR="C:\Inno Setup 5"'
           if (!(Test-Path "C:\Inno Setup 5\ISCC.exe")) {
             throw "Inno Setup 5.6.1 install failed."
