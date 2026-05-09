@@ -1,0 +1,10 @@
+{
+  "version": "1.0.3",
+  "download_url": "ProbeTool_Setup_x64_v1.0.3.exe",
+  "release_url": "http://192.168.1.10/probe-tool/",
+  "changelog": [
+    "更新按钮改为应用内下载，并显示下载进度。",
+    "下载完成后自动静默安装并重启程序。",
+    "支持内网 HTTP 更新清单，避免现场电脑直接访问 GitHub。"
+  ]
+}

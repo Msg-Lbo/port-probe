@@ -57,3 +57,24 @@ try {
 }
 
 Write-Host "Installer build done. Check installer_output directory."
+
+$changelogText = ""
+$changelogPath = Join-Path $repoRoot "CHANGELOG.md"
+if (Test-Path $changelogPath) {
+  $allChangelog = Get-Content -Path $changelogPath -Raw -Encoding UTF8
+  $escapedVersion = [regex]::Escape($Version)
+  $match = [regex]::Match($allChangelog, "(?ms)^##\s+v?$escapedVersion[^\r\n]*\r?\n(?<body>.*?)(?=^##\s+|\z)")
+  if ($match.Success) {
+    $changelogText = $match.Groups["body"].Value.Trim()
+  }
+}
+
+$manifest = [ordered]@{
+  version = $Version
+  download_url = "$outputBaseName.exe"
+  release_url = ""
+  changelog = $changelogText
+}
+$manifestPath = Join-Path $repoRoot "installer_output/latest.json"
+$manifest | ConvertTo-Json -Depth 4 | Set-Content -Path $manifestPath -Encoding UTF8
+Write-Host "Update manifest created: $manifestPath"

@@ -14,9 +14,12 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialog>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -30,12 +33,19 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QProcess>
+#include <QProgressDialog>
 #include <QRegularExpression>
 #include <QPushButton>
+#include <QSettings>
+#include <QSslError>
+#include <QStandardPaths>
 #include <QTableView>
 #include <QTextEdit>
+#include <QTextStream>
 #include <QTimer>
 #include <QToolBar>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrent>
@@ -49,11 +59,21 @@
 namespace pp {
 
 #ifndef APP_VERSION
-#define APP_VERSION "1.0.2"
+#define APP_VERSION "1.0.3"
 #endif
 
 static const char* kReleaseApiUrl = "https://api.github.com/repos/Msg-Lbo/port-probe/releases/latest";
 static const char* kChangelogUrl = "https://raw.githubusercontent.com/Msg-Lbo/port-probe/main/CHANGELOG.md";
+static constexpr int kUpdateCheckTimeoutMs = 12000;
+static constexpr int kChangelogTimeoutMs = 8000;
+
+struct UpdateInfo {
+    QString version;
+    QString releaseUrl;
+    QString downloadUrl;
+    QString changelog;
+    QString changelogUrl;
+};
 
 static QString currentVersion()
 {
@@ -64,6 +84,52 @@ static QString withVersionPrefix(const QString& version)
 {
     const auto v = version.trimmed();
     return v.startsWith('v', Qt::CaseInsensitive) ? v : QStringLiteral("v") + v;
+}
+
+static QString jsonString(const QJsonObject& obj, const QStringList& keys)
+{
+    for (const auto& key : keys) {
+        const auto value = obj.value(key);
+        if (value.isString()) {
+            const auto text = value.toString().trimmed();
+            if (!text.isEmpty()) {
+                return text;
+            }
+        }
+    }
+    return {};
+}
+
+static QString jsonChangelog(const QJsonObject& obj)
+{
+    const auto changelog = obj.value(QStringLiteral("changelog"));
+    if (changelog.isString()) {
+        return changelog.toString().trimmed();
+    }
+    if (changelog.isArray()) {
+        QStringList lines;
+        const auto items = changelog.toArray();
+        for (const auto& item : items) {
+            if (item.isString() && !item.toString().trimmed().isEmpty()) {
+                lines << QStringLiteral("- %1").arg(item.toString().trimmed());
+            }
+        }
+        return lines.join('\n').trimmed();
+    }
+    return jsonString(obj, { QStringLiteral("body"), QStringLiteral("notes"), QStringLiteral("release_notes") });
+}
+
+static QString resolveUpdateUrl(const QString& baseUrl, const QString& value)
+{
+    const auto text = value.trimmed();
+    if (text.isEmpty()) {
+        return {};
+    }
+    QUrl url(text);
+    if (url.isRelative() && !baseUrl.isEmpty()) {
+        url = QUrl(baseUrl).resolved(url);
+    }
+    return url.toString();
 }
 
 static QString normalizedVersion(QString version)
@@ -168,6 +234,38 @@ static QString bestDownloadUrl(const QJsonObject& release)
         }
     }
     return fallback;
+}
+
+static bool isInstallerUrl(const QString& urlText)
+{
+    const QUrl url(urlText);
+    return url.isValid() && url.path().endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive);
+}
+
+static UpdateInfo githubReleaseInfo(const QJsonObject& obj)
+{
+    UpdateInfo info;
+    info.version = obj.value(QStringLiteral("tag_name")).toString().trimmed();
+    info.releaseUrl = obj.value(QStringLiteral("html_url")).toString().trimmed();
+    info.downloadUrl = bestDownloadUrl(obj);
+    info.changelog = obj.value(QStringLiteral("body")).toString().trimmed();
+    info.changelogUrl = QString::fromLatin1(kChangelogUrl);
+    return info;
+}
+
+static UpdateInfo manifestInfo(const QJsonObject& obj, const QString& manifestUrl)
+{
+    UpdateInfo info;
+    info.version = jsonString(obj, { QStringLiteral("version"), QStringLiteral("tag_name") });
+    info.releaseUrl = resolveUpdateUrl(manifestUrl, jsonString(obj, { QStringLiteral("release_url"), QStringLiteral("html_url") }));
+    info.downloadUrl = resolveUpdateUrl(manifestUrl, jsonString(obj, {
+        QStringLiteral("download_url"),
+        QStringLiteral("installer_url"),
+        QStringLiteral("url")
+    }));
+    info.changelog = jsonChangelog(obj);
+    info.changelogUrl = resolveUpdateUrl(manifestUrl, jsonString(obj, { QStringLiteral("changelog_url") }));
+    return info;
 }
 
 static QString buildQrPayload(const QVector<DeviceInfo>& devices)
@@ -555,6 +653,54 @@ void MainWindow::copyRow()
     QApplication::clipboard()->setText(cols.join("\t"));
 }
 
+QString MainWindow::configuredUpdateManifestUrl() const
+{
+    const auto envUrl = qEnvironmentVariable("PROBE_TOOL_UPDATE_MANIFEST_URL").trimmed();
+    QSettings settings(QApplication::applicationDirPath() + QStringLiteral("/config.ini"), QSettings::IniFormat);
+    settings.beginGroup(QStringLiteral("update"));
+    const auto url = settings.value(QStringLiteral("manifest_url"), envUrl).toString().trimmed();
+    settings.endGroup();
+    return url;
+}
+
+bool MainWindow::ignoreUpdateSslErrors() const
+{
+    const auto envValue = qEnvironmentVariable("PROBE_TOOL_IGNORE_SSL_ERRORS").trimmed().toLower();
+    const bool envEnabled = envValue == QStringLiteral("1")
+        || envValue == QStringLiteral("true")
+        || envValue == QStringLiteral("yes");
+
+    QSettings settings(QApplication::applicationDirPath() + QStringLiteral("/config.ini"), QSettings::IniFormat);
+    settings.beginGroup(QStringLiteral("update"));
+    const bool enabled = settings.value(QStringLiteral("ignore_ssl_errors"), envEnabled).toBool();
+    settings.endGroup();
+    return enabled;
+}
+
+QNetworkReply* MainWindow::sendUpdateRequest(QNetworkRequest request, int timeoutMs)
+{
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    if (!request.hasRawHeader("User-Agent")) {
+        request.setRawHeader("User-Agent", "ProbeTool");
+    }
+    request.setRawHeader("Cache-Control", "no-cache");
+
+    auto* reply = _updateManager->get(request);
+    if (ignoreUpdateSslErrors()) {
+        connect(reply, &QNetworkReply::sslErrors, reply, [reply](const QList<QSslError>&) {
+            reply->ignoreSslErrors();
+        });
+    }
+    if (timeoutMs > 0) {
+        QTimer::singleShot(timeoutMs, reply, [reply]() {
+            if (reply->isRunning()) {
+                reply->abort();
+            }
+        });
+    }
+    return reply;
+}
+
 void MainWindow::openUpdateDialog()
 {
     if (_updateDialog) {
@@ -586,7 +732,7 @@ void MainWindow::openUpdateDialog()
     buttons->setContentsMargins(0, 0, 0, 0);
     buttons->setSpacing(8);
     _checkUpdateButton = new QPushButton(QStringLiteral("检测更新"), _updateDialog);
-    _updateButton = new QPushButton(QStringLiteral("更新"), _updateDialog);
+    _updateButton = new QPushButton(QStringLiteral("下载并更新"), _updateDialog);
     auto* closeButton = new QPushButton(QStringLiteral("关闭"), _updateDialog);
     buttons->addWidget(_checkUpdateButton);
     buttons->addStretch(1);
@@ -598,7 +744,7 @@ void MainWindow::openUpdateDialog()
     layout->addLayout(buttons);
 
     connect(_checkUpdateButton, &QPushButton::clicked, this, [this]() { checkForUpdates(true); });
-    connect(_updateButton, &QPushButton::clicked, this, &MainWindow::openLatestRelease);
+    connect(_updateButton, &QPushButton::clicked, this, &MainWindow::startUpdateDownload);
     connect(closeButton, &QPushButton::clicked, _updateDialog, &QDialog::close);
     connect(_updateDialog, &QObject::destroyed, this, [this]() {
         _updateDialog = nullptr;
@@ -630,15 +776,21 @@ void MainWindow::checkForUpdates(bool userInitiated)
     applyUpdateState();
     refreshUpdateDialog();
 
-    QNetworkRequest req(QUrl(QString::fromLatin1(kReleaseApiUrl)));
-    req.setRawHeader("Accept", "application/vnd.github+json");
-    req.setRawHeader("User-Agent", "ProbeTool");
-    auto* reply = _updateManager->get(req);
+    const QString manifestUrl = configuredUpdateManifestUrl();
+    const bool useManifest = !manifestUrl.isEmpty();
+    QNetworkRequest req{ QUrl(useManifest ? manifestUrl : QString::fromLatin1(kReleaseApiUrl)) };
+    req.setRawHeader("Accept", useManifest ? "application/json" : "application/vnd.github+json");
+    auto* reply = sendUpdateRequest(req, kUpdateCheckTimeoutMs);
     connect(reply, &QNetworkReply::finished, this, [this, reply, userInitiated]() {
+        const QString requestUrl = reply->request().url().toString();
+        const bool useManifest = requestUrl != QString::fromLatin1(kReleaseApiUrl);
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
             _checkingUpdate = false;
             _updateError = QStringLiteral("检测更新失败：%1").arg(reply->errorString());
+            if (!useManifest) {
+                _updateError += QStringLiteral("\n如果这台电脑不能访问 GitHub，请在 config.ini 的 [update] 里配置 manifest_url，指向内网或代理服务器上的更新清单。");
+            }
             if (_latestVersion.isEmpty()) {
                 _hasUpdate = false;
                 setVersionFlash(false);
@@ -652,7 +804,8 @@ void MainWindow::checkForUpdates(bool userInitiated)
         }
 
         QJsonParseError parseError {};
-        const auto doc = QJsonDocument::fromJson(reply->readAll(), &parseError);
+        const auto payload = reply->readAll();
+        const auto doc = QJsonDocument::fromJson(payload, &parseError);
         if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
             _checkingUpdate = false;
             _updateError = QStringLiteral("检测更新失败：版本信息解析失败");
@@ -664,10 +817,21 @@ void MainWindow::checkForUpdates(bool userInitiated)
         }
 
         const auto obj = doc.object();
-        _latestVersion = obj.value(QStringLiteral("tag_name")).toString();
-        _latestReleaseUrl = obj.value(QStringLiteral("html_url")).toString();
-        _latestReleaseBody = obj.value(QStringLiteral("body")).toString().trimmed();
-        _latestDownloadUrl = bestDownloadUrl(obj);
+        const UpdateInfo info = useManifest ? manifestInfo(obj, requestUrl) : githubReleaseInfo(obj);
+        if (info.version.isEmpty()) {
+            _checkingUpdate = false;
+            _updateError = QStringLiteral("检测更新失败：更新清单缺少版本号");
+            _hasUpdate = false;
+            setVersionFlash(false);
+            applyUpdateState();
+            refreshUpdateDialog();
+            return;
+        }
+
+        _latestVersion = info.version;
+        _latestReleaseUrl = info.releaseUrl;
+        _latestReleaseBody = info.changelog.trimmed();
+        _latestDownloadUrl = info.downloadUrl;
         _hasUpdate = compareVersions(_latestVersion, currentVersion()) > 0;
 
         if (!_hasUpdate) {
@@ -680,13 +844,27 @@ void MainWindow::checkForUpdates(bool userInitiated)
             return;
         }
 
+        _checkingUpdate = false;
+        _latestChangelog = _latestReleaseBody.trimmed();
+        if (_latestChangelog.isEmpty()) {
+            _latestChangelog = QStringLiteral("正在获取更新日志...");
+        }
+        _updateError.clear();
         setVersionFlash(true);
         applyUpdateState();
         refreshUpdateDialog();
 
-        QNetworkRequest changelogReq(QUrl(QString::fromLatin1(kChangelogUrl)));
-        changelogReq.setRawHeader("User-Agent", "ProbeTool");
-        auto* changelogReply = _updateManager->get(changelogReq);
+        const QString changelogUrl = info.changelogUrl;
+        if (changelogUrl.isEmpty()) {
+            if (_latestChangelog == QStringLiteral("正在获取更新日志...")) {
+                _latestChangelog = QStringLiteral("暂无更新日志。");
+                refreshUpdateDialog();
+            }
+            return;
+        }
+
+        QNetworkRequest changelogReq{ QUrl(changelogUrl) };
+        auto* changelogReply = sendUpdateRequest(changelogReq, kChangelogTimeoutMs);
         connect(changelogReply, &QNetworkReply::finished, this, [this, changelogReply]() {
             changelogReply->deleteLater();
             if (changelogReply->error() == QNetworkReply::NoError) {
@@ -696,10 +874,12 @@ void MainWindow::checkForUpdates(bool userInitiated)
             if (_latestChangelog.trimmed().isEmpty()) {
                 _latestChangelog = _latestReleaseBody.trimmed();
             }
+            if (_latestChangelog == QStringLiteral("正在获取更新日志...")) {
+                _latestChangelog.clear();
+            }
             if (_latestChangelog.trimmed().isEmpty()) {
                 _latestChangelog = QStringLiteral("暂无更新日志。");
             }
-            _checkingUpdate = false;
             _updateError.clear();
             applyUpdateState();
             refreshUpdateDialog();
@@ -796,11 +976,19 @@ void MainWindow::refreshUpdateDialog()
         _updateLog->setPlainText(logText);
     }
     if (_checkUpdateButton) {
-        _checkUpdateButton->setEnabled(!_checkingUpdate);
+        _checkUpdateButton->setEnabled(!_checkingUpdate && !_updateDownloadReply);
         _checkUpdateButton->setText(_checkingUpdate ? QStringLiteral("检测中...") : QStringLiteral("检测更新"));
     }
     if (_updateButton) {
-        _updateButton->setEnabled(_hasUpdate && (!_latestDownloadUrl.isEmpty() || !_latestReleaseUrl.isEmpty()));
+        const bool installerReady = isInstallerUrl(_latestDownloadUrl);
+        _updateButton->setText(installerReady ? QStringLiteral("下载并更新") : QStringLiteral("打开下载页"));
+        if (_updateDownloadReply) {
+            _updateButton->setText(QStringLiteral("下载中..."));
+        }
+        _updateButton->setEnabled(_hasUpdate
+            && !_checkingUpdate
+            && !_updateDownloadReply
+            && (!_latestDownloadUrl.isEmpty() || !_latestReleaseUrl.isEmpty()));
     }
 }
 
@@ -817,6 +1005,154 @@ void MainWindow::setVersionFlash(bool enabled)
     } else {
         _versionBlinkTimer->stop();
     }
+}
+
+void MainWindow::startUpdateDownload()
+{
+    if (_updateDownloadReply) {
+        return;
+    }
+
+    if (!isInstallerUrl(_latestDownloadUrl)) {
+        openLatestRelease();
+        return;
+    }
+
+    const auto tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    if (tempDir.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("更新"), QStringLiteral("无法找到临时目录，不能下载更新。"));
+        return;
+    }
+
+    QDir().mkpath(tempDir);
+    const QString fileName = QStringLiteral("ProbeTool_Setup_x64_%1.exe").arg(withVersionPrefix(_latestVersion));
+    _updateDownloadPath = QDir(tempDir).filePath(fileName);
+    if (QFile::exists(_updateDownloadPath)) {
+        QFile::remove(_updateDownloadPath);
+    }
+
+    _updateDownloadFile = new QFile(_updateDownloadPath, this);
+    if (!_updateDownloadFile->open(QIODevice::WriteOnly)) {
+        const auto errorText = _updateDownloadFile->errorString();
+        _updateDownloadFile->deleteLater();
+        _updateDownloadFile = nullptr;
+        QMessageBox::warning(this, QStringLiteral("更新"), QStringLiteral("无法写入更新文件：%1").arg(errorText));
+        return;
+    }
+
+    _updateProgressDialog = new QProgressDialog(QStringLiteral("正在下载更新..."), QStringLiteral("取消"), 0, 100, this);
+    _updateProgressDialog->setWindowTitle(QStringLiteral("在线更新"));
+    _updateProgressDialog->setWindowModality(Qt::ApplicationModal);
+    _updateProgressDialog->setMinimumDuration(0);
+    _updateProgressDialog->setValue(0);
+
+    QNetworkRequest req{ QUrl(_latestDownloadUrl) };
+    _updateDownloadReply = sendUpdateRequest(req);
+    connect(_updateProgressDialog, &QProgressDialog::canceled, this, [this]() {
+        if (_updateDownloadReply) {
+            _updateDownloadReply->abort();
+        }
+    });
+    connect(_updateDownloadReply, &QNetworkReply::readyRead, this, [this]() {
+        if (_updateDownloadReply && _updateDownloadFile) {
+            _updateDownloadFile->write(_updateDownloadReply->readAll());
+        }
+    });
+    connect(_updateDownloadReply, &QNetworkReply::downloadProgress, this, [this](qint64 received, qint64 total) {
+        if (!_updateProgressDialog) {
+            return;
+        }
+        if (total > 0) {
+            _updateProgressDialog->setRange(0, 100);
+            _updateProgressDialog->setValue(static_cast<int>((received * 100) / total));
+            _updateProgressDialog->setLabelText(QStringLiteral("正在下载更新：%1 / %2 MB")
+                .arg(QString::number(received / 1024.0 / 1024.0, 'f', 1))
+                .arg(QString::number(total / 1024.0 / 1024.0, 'f', 1)));
+        } else {
+            _updateProgressDialog->setRange(0, 0);
+            _updateProgressDialog->setLabelText(QStringLiteral("正在下载更新..."));
+        }
+    });
+    connect(_updateDownloadReply, &QNetworkReply::finished, this, [this]() {
+        auto* reply = _updateDownloadReply;
+        _updateDownloadReply = nullptr;
+        if (reply && _updateDownloadFile) {
+            _updateDownloadFile->write(reply->readAll());
+        }
+        if (_updateDownloadFile) {
+            _updateDownloadFile->close();
+            _updateDownloadFile->deleteLater();
+            _updateDownloadFile = nullptr;
+        }
+
+        const bool ok = reply && reply->error() == QNetworkReply::NoError;
+        const auto errorText = reply ? reply->errorString() : QStringLiteral("未知错误");
+        if (reply) {
+            reply->deleteLater();
+        }
+        if (_updateProgressDialog) {
+            _updateProgressDialog->close();
+            _updateProgressDialog->deleteLater();
+            _updateProgressDialog = nullptr;
+        }
+        refreshUpdateDialog();
+
+        if (!ok) {
+            QFile::remove(_updateDownloadPath);
+            QMessageBox::warning(this, QStringLiteral("更新失败"), QStringLiteral("下载更新失败：%1").arg(errorText));
+            return;
+        }
+
+        if (QFileInfo(_updateDownloadPath).size() <= 0) {
+            QFile::remove(_updateDownloadPath);
+            QMessageBox::warning(this, QStringLiteral("更新失败"), QStringLiteral("下载的更新文件为空。"));
+            return;
+        }
+
+        launchInstallerAndRestart(_updateDownloadPath);
+    });
+
+    refreshUpdateDialog();
+}
+
+void MainWindow::launchInstallerAndRestart(const QString& installerPath)
+{
+    const QString appPath = QDir::toNativeSeparators(QApplication::applicationFilePath());
+    const QString nativeInstaller = QDir::toNativeSeparators(installerPath);
+    const QString scriptPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+        .filePath(QStringLiteral("ProbeTool_Update_%1.cmd").arg(QCoreApplication::applicationPid()));
+
+    QFile script(scriptPath);
+    if (!script.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, QStringLiteral("更新失败"), QStringLiteral("无法创建更新脚本：%1").arg(script.errorString()));
+        return;
+    }
+
+    QTextStream out(&script);
+    out.setCodec("GBK");
+    out << "@echo off\r\n";
+    out << "setlocal\r\n";
+    out << "set \"SETUP=" << nativeInstaller << "\"\r\n";
+    out << "set \"APP=" << appPath << "\"\r\n";
+    out << "set \"PID=" << QCoreApplication::applicationPid() << "\"\r\n";
+    out << ":wait_app\r\n";
+    out << "tasklist /FI \"PID eq %PID%\" | find \"%PID%\" >nul\r\n";
+    out << "if not errorlevel 1 (\r\n";
+    out << "  ping 127.0.0.1 -n 2 >nul\r\n";
+    out << "  goto wait_app\r\n";
+    out << ")\r\n";
+    out << "\"%SETUP%\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-\r\n";
+    out << "start \"\" \"%APP%\"\r\n";
+    out << "del \"%SETUP%\" >nul 2>nul\r\n";
+    out << "del \"%~f0\" >nul 2>nul\r\n";
+    script.close();
+
+    if (!QProcess::startDetached(QStringLiteral("cmd.exe"), { QStringLiteral("/C"), QDir::toNativeSeparators(scriptPath) })) {
+        QMessageBox::warning(this, QStringLiteral("更新失败"), QStringLiteral("无法启动更新安装程序。"));
+        return;
+    }
+
+    QApplication::quit();
 }
 
 void MainWindow::openLatestRelease()

@@ -84,9 +84,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/pack.ps1" -Arch x
 
 #### 3) 生成单文件安装包（Inno Setup 5）
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.ps1" -Arch x64 -Version 1.0.2 -IsccPath "D:/Inno Setup 5/ISCC.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.ps1" -Arch x64 -Version 1.0.3 -IsccPath "D:/Inno Setup 5/ISCC.exe"
 ```
 
 输出：
-- 安装包：`installer_output/ProbeTool_Setup_x64_v1.0.2.exe`
+- 安装包：`installer_output/ProbeTool_Setup_x64_v1.0.3.exe`
 - 压缩包：`dist/ProbeTool_x64_all_in_one.zip`
+
+### 在线更新源配置
+默认更新源使用 GitHub Releases。若现场电脑无法访问 GitHub，或 Win7 TLS 环境不稳定，可以在程序同目录的 `config.ini` 里增加内网 HTTP 更新源：
+
+```ini
+[update]
+manifest_url=http://192.168.1.10/probe-tool/latest.json
+```
+
+更新清单格式参考 `packaging/update-manifest.example.json`。清单里的 `download_url` 可以是相对地址，也可以是完整 URL；建议指向 `ProbeTool_Setup_x64_v*.exe` 安装包。配置后点击“检测更新”，再点击“下载并更新”，程序会显示下载进度，下载完成后静默安装并重启。
+
+如果必须使用 HTTPS 但 Win7 根证书导致证书校验失败，可临时增加：
+
+```ini
+[update]
+ignore_ssl_errors=true
+```
+
+更推荐使用内网 HTTP 或修复系统证书，不建议长期忽略 HTTPS 证书错误。

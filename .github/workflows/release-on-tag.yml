@@ -101,3 +101,4 @@ jobs:
           files: |
             dist/ProbeTool_x64_all_in_one.zip
             installer_output/ProbeTool_Setup_x64_v*.exe
+            installer_output/latest.json

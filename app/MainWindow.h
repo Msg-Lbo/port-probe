@@ -10,7 +10,11 @@ class QLabel;
 class QTableView;
 class QCheckBox;
 class QDialog;
+class QFile;
 class QNetworkAccessManager;
+class QNetworkRequest;
+class QNetworkReply;
+class QProgressDialog;
 class QTextEdit;
 class QTimer;
 template<typename T>
@@ -45,6 +49,11 @@ private:
     void refreshUpdateDialog();
     void setVersionFlash(bool enabled);
     void openLatestRelease();
+    void startUpdateDownload();
+    void launchInstallerAndRestart(const QString& installerPath);
+    QString configuredUpdateManifestUrl() const;
+    bool ignoreUpdateSslErrors() const;
+    QNetworkReply* sendUpdateRequest(QNetworkRequest request, int timeoutMs = 0);
 
     QComboBox* _ifaceCombo = nullptr;
     QPushButton* _refreshBtn = nullptr;
@@ -64,6 +73,9 @@ private:
     QTextEdit* _updateLog = nullptr;
     QPushButton* _updateButton = nullptr;
     QPushButton* _checkUpdateButton = nullptr;
+    QProgressDialog* _updateProgressDialog = nullptr;
+    QNetworkReply* _updateDownloadReply = nullptr;
+    QFile* _updateDownloadFile = nullptr;
 
     SearchConfig _cfg;
     QString _latestVersion;
@@ -72,6 +84,7 @@ private:
     QString _latestReleaseBody;
     QString _latestChangelog;
     QString _updateError;
+    QString _updateDownloadPath;
     bool _hasUpdate = false;
     bool _checkingUpdate = false;
     bool _versionBlinkOn = false;
