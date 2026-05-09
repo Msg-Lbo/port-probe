@@ -49,7 +49,7 @@
 namespace pp {
 
 #ifndef APP_VERSION
-#define APP_VERSION "1.0.1"
+#define APP_VERSION "1.0.2"
 #endif
 
 static const char* kReleaseApiUrl = "https://api.github.com/repos/Msg-Lbo/port-probe/releases/latest";
