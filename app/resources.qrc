@@ -4,4 +4,7 @@
     <file alias="app.png">../ico.png</file>
     <file alias="arrow-down.png">arrow_down.png</file>
   </qresource>
+  <qresource prefix="/docs">
+    <file alias="CHANGELOG.md">../CHANGELOG.md</file>
+  </qresource>
 </RCC>

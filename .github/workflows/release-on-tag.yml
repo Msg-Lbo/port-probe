@@ -59,6 +59,8 @@ jobs:
           "GCC_EXE=$($gccExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "GXX_EXE=$($gxxExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "MINGW_MAKE_EXE=$($mingwMakeExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $qtBinDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          (Split-Path -Parent $gxxExe.FullName) | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Configure (CMake)
         shell: pwsh
@@ -75,21 +77,26 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/pack.ps1" -Arch x64 -BuildDir "build-qt-x64" -QtBinDir "${env:QT_BIN_DIR}" -Toolchain mingw
 
-      - name: Install Inno Setup
+      - name: Install Inno Setup 5.6.1
         shell: pwsh
         run: |
-          choco install innosetup --no-progress -y
+          $installer = Join-Path $env:RUNNER_TEMP "isetup-5.6.1.exe"
+          Invoke-WebRequest -Uri "https://files.jrsoftware.org/is/5/isetup-5.6.1.exe" -OutFile $installer
+          Start-Process -FilePath $installer -Wait -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR="C:\Inno Setup 5"'
+          if (!(Test-Path "C:\Inno Setup 5\ISCC.exe")) {
+            throw "Inno Setup 5.6.1 install failed."
+          }
 
       - name: Build installer
         shell: pwsh
         run: |
           $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
-          powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.ps1" -Arch x64 -Version $version -IsccPath "C:/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.ps1" -Arch x64 -Version $version -IsccPath "C:/Inno Setup 5/ISCC.exe"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            dist/PortProbeQt_x64_all_in_one.zip
-            installer_output/PortProbeQt_Setup_x64_v*.exe
+            dist/探测工具_x64_all_in_one.zip
+            installer_output/探测工具_Setup_x64_v*.exe

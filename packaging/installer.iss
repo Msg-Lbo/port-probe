@@ -1,8 +1,15 @@
-#define MyAppName "PortProbeQt"
-#define MyAppExeName "PortProbeQt.exe"
+#ifndef MyAppName
+  #define MyAppName "ProbeTool"
+#endif
+#ifndef MyAppExeName
+  #define MyAppExeName "ProbeTool.exe"
+#endif
 #define MyAppPublisher "Msg-Lbo"
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
+#endif
+#ifndef MyOutputBaseFilename
+  #define MyOutputBaseFilename "ProbeTool_Setup"
 #endif
 #define MyAppURL "https://github.com/Msg-Lbo/port-probe"
 
@@ -21,9 +28,10 @@ DefaultDirName={pf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\installer_output
-OutputBaseFilename=PortProbeQt_Setup_{#MyArch}_v{#MyAppVersion}
+OutputBaseFilename={#MyOutputBaseFilename}
 Compression=lzma
 SolidCompression=yes
+MinVersion=0,6.1
 PrivilegesRequired=admin
 #if "x64" == MyArch
 ArchitecturesAllowed=x64
@@ -49,4 +57,3 @@ Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFil
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
-

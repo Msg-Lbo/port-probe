@@ -50,6 +50,14 @@ add_executable(PortProbeQt WIN32
   core/Admin.cpp
 )
 
+set_target_properties(PortProbeQt PROPERTIES
+  OUTPUT_NAME "探测工具"
+)
+
+target_compile_definitions(PortProbeQt PRIVATE
+  APP_VERSION="${PROJECT_VERSION}"
+)
+
 target_include_directories(PortProbeQt PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -63,4 +71,3 @@ target_link_libraries(PortProbeQt PRIVATE
   ws2_32
   iphlpapi
 )
-

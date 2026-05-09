@@ -19,20 +19,50 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path "$PSScriptRoot/..").Path
 $distRoot = Join-Path $repoRoot "dist"
 $distDir = Join-Path $distRoot $Arch
+$appBaseName = [string]::Concat([char[]](0x63A2, 0x6D4B, 0x5DE5, 0x5177))
+$appExeName = "$appBaseName.exe"
+
+$mingwCompilerBin = $null
+$cmakeCache = Join-Path $BuildDir "CMakeCache.txt"
+if (Test-Path $cmakeCache) {
+  $compilerLine = Get-Content $cmakeCache | Where-Object { $_ -like "CMAKE_CXX_COMPILER:*" } | Select-Object -First 1
+  if ($compilerLine -and ($compilerLine -match "=(.+)$")) {
+    $compilerPath = $Matches[1].Trim()
+    if (Test-Path $compilerPath) {
+      $mingwCompilerBin = Split-Path -Parent $compilerPath
+    }
+  }
+}
+
+if ($Toolchain -eq "mingw") {
+  # GCC helper executables and Qt DLLs must be discoverable when CMake/windeployqt
+  # launch child processes. This is required on clean machines and in CI.
+  $pathParts = @($QtBinDir)
+  if ($mingwCompilerBin) {
+    $pathParts += $mingwCompilerBin
+  }
+  $env:PATH = (($pathParts | Where-Object { $_ -and (Test-Path $_) }) -join ";") + ";" + $env:PATH
+}
 
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 Get-ChildItem -Path $distDir -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-$exe = Join-Path $BuildDir "Release/PortProbeQt.exe"
+$exe = Join-Path $BuildDir "Release/$appExeName"
 if (!(Test-Path $exe)) {
   # fallback for different generators
+  $exe = Join-Path $BuildDir $appExeName
+}
+if (!(Test-Path $exe)) {
+  $exe = Join-Path $BuildDir "Release/PortProbeQt.exe"
+}
+if (!(Test-Path $exe)) {
   $exe = Join-Path $BuildDir "PortProbeQt.exe"
 }
 if (!(Test-Path $exe)) {
-  throw "PortProbeQt.exe not found under build dir: $BuildDir"
+  throw "$appExeName not found under build dir: $BuildDir"
 }
 
-Copy-Item $exe (Join-Path $distDir "PortProbeQt.exe") -Force
+Copy-Item $exe (Join-Path $distDir $appExeName) -Force
 
 $windeployqt = Join-Path $QtBinDir "windeployqt.exe"
 if (!(Test-Path $windeployqt)) {
@@ -42,9 +72,9 @@ if (!(Test-Path $windeployqt)) {
 Push-Location $distDir
 try {
   if ($Toolchain -eq "msvc") {
-    & $windeployqt ".\PortProbeQt.exe" --release --compiler-runtime --no-translations
+    & $windeployqt ".\$appExeName" --release --compiler-runtime --no-translations
   } else {
-    & $windeployqt ".\PortProbeQt.exe" --release --no-translations
+    & $windeployqt ".\$appExeName" --release --no-translations
   }
 } finally {
   Pop-Location
@@ -127,6 +157,10 @@ else {
 
   $mingwCandidates = @()
 
+  if ($mingwCompilerBin) {
+    $mingwCandidates += $mingwCompilerBin
+  }
+
   # Prefer environment-provided MinGW bin path in CI.
   if ($env:GXX_EXE) {
     $gxxDir = Split-Path -Parent $env:GXX_EXE
@@ -144,20 +178,34 @@ else {
     $toolBins = Get-ChildItem -Path $qtToolsRoot -Recurse -Directory -ErrorAction SilentlyContinue |
       Where-Object { $_.Name -eq "bin" } |
       Select-Object -ExpandProperty FullName
+    if ($Arch -eq "x64") {
+      $toolBins = $toolBins | Where-Object { $_ -match "mingw.*64|x86_64" }
+    } else {
+      $toolBins = $toolBins | Where-Object { $_ -match "mingw.*32|i686" }
+    }
     if ($toolBins) {
       $mingwCandidates += $toolBins
     }
   }
 
   # Backward-compatible local fallback paths.
-  $mingwCandidates += @(
-    "D:\Qt\Tools\mingw810_64\bin",
-    "D:\Qt\Tools\mingw810_32\bin",
-    "D:\Qt\Tools\mingw1310_64\bin"
-  )
+  if ($Arch -eq "x64") {
+    $mingwCandidates += @(
+      "D:\Qt\Tools\mingw810_64\bin",
+      "D:\Qt\Tools\mingw1310_64\bin"
+    )
+  } else {
+    $mingwCandidates += @(
+      "D:\Qt\Tools\mingw810_32\bin"
+    )
+  }
 
   $mingwCandidates = $mingwCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
-  $mingwRuntimeNames = @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll", "libgcc_s_dw2-1.dll")
+  if ($Arch -eq "x64") {
+    $mingwRuntimeNames = @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+  } else {
+    $mingwRuntimeNames = @("libgcc_s_dw2-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+  }
   foreach ($dll in $mingwRuntimeNames) {
     $target = Join-Path $distDir $dll
     if (Test-Path $target) { continue }
@@ -169,13 +217,24 @@ else {
       }
     }
   }
+
+  # qdirect2d depends on Direct2D platform updates that are not present on Win7 RTM.
+  # Keep qwindows.dll only so the package has no SP1/Platform Update requirement.
+  $direct2dPlugin = Join-Path $distDir "platforms/qdirect2d.dll"
+  if (Test-Path $direct2dPlugin) {
+    Remove-Item $direct2dPlugin -Force
+  }
 }
 
-$required = @("PortProbeQt.exe", "platforms/qwindows.dll")
+$required = @($appExeName, "platforms/qwindows.dll")
 if ($Toolchain -eq "msvc") {
   $required += @("msvcp140.dll", "vcruntime140.dll")
 } else {
-  $required += @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+  if ($Arch -eq "x64") {
+    $required += @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+  } else {
+    $required += @("libgcc_s_dw2-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+  }
 }
 foreach ($r in $required) {
   $p = Join-Path $distDir $r
@@ -187,7 +246,7 @@ foreach ($r in $required) {
 Write-Host "Packed to $distDir"
 
 # Also generate a single-file distributable archive.
-$bundleName = "PortProbeQt_${Arch}_all_in_one.zip"
+$bundleName = "${appBaseName}_${Arch}_all_in_one.zip"
 $bundlePath = Join-Path $distRoot $bundleName
 if (Test-Path $bundlePath) {
   Remove-Item $bundlePath -Force

@@ -1,4 +1,4 @@
-## PortProbeQt（Win7 低版本友好）
+## 探测工具（Win7 低版本友好）
 
 ### 功能（MVP）
 - 网卡刷新/选择
@@ -54,16 +54,20 @@ pwsh packaging/pack.ps1 -Arch x86 -BuildDir build-qt-x86 -QtBinDir "C:/Qt/5.12.1
 ```
 
 生成目录：
-- `dist/x64/PortProbeQt.exe` + Qt 依赖
-- `dist/x86/PortProbeQt.exe` + Qt 依赖
+- `dist/x64/探测工具.exe` + Qt 依赖
+- `dist/x86/探测工具.exe` + Qt 依赖
 
 ### Win7 无 SP1 最终发布链路（已验证）
-建议使用 **Qt 5.15.2 MinGW + Inno Setup 5.6.1**：
+无 SP1 的 Win7 RTM 发布包必须使用 **Qt 5.15.2 MinGW + Inno Setup 5.6.1**：
 - Qt：`D:/Qt/5.15.2/mingw81_64`
 - MinGW：`D:/Qt/Tools/mingw810_64`
 - CMake：`D:/Qt/Tools/CMake_64/bin/cmake.exe`
 - Ninja：`D:/Qt/Tools/Ninja/ninja.exe`
 - Inno：`D:/Inno Setup 5/ISCC.exe`
+
+不要用 MSVC 发布包或 Inno Setup 6 生成面向 Win7 RTM 的产物：
+- 新版 VC/UCRT 运行库可能要求 Win7 SP1
+- Inno Setup 6 生成的安装包启动器可能要求 Win7 SP1
 
 > 注意：MinGW 在中文路径下可能触发 `moc` 失败。若遇到此问题，请在英文目录构建（例如 `D:/portprobe_ascii`），再回项目目录执行打包脚本。
 
@@ -84,5 +88,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.p
 ```
 
 输出：
-- 安装包：`installer_output/PortProbeQt_Setup_x64_v1.0.0.exe`
-
+- 安装包：`installer_output/探测工具_Setup_x64_v1.0.0.exe`

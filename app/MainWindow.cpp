@@ -14,14 +14,27 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDesktopServices>
+#include <QDialog>
+#include <QFile>
 #include <QHeaderView>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMouseEvent>
 #include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QRegularExpression>
 #include <QPushButton>
 #include <QTableView>
+#include <QTextEdit>
+#include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <QFutureWatcher>
@@ -31,8 +44,167 @@
 #include <QStyledItemDelegate>
 #include <QPainter>
 #include <QStyleOptionButton>
+#include <functional>
 
 namespace pp {
+
+#ifndef APP_VERSION
+#define APP_VERSION "1.0.0"
+#endif
+
+static const char* kReleaseApiUrl = "https://api.github.com/repos/Msg-Lbo/port-probe/releases/latest";
+static const char* kChangelogUrl = "https://raw.githubusercontent.com/Msg-Lbo/port-probe/main/CHANGELOG.md";
+
+static QString currentVersion()
+{
+    return QStringLiteral(APP_VERSION);
+}
+
+static QString withVersionPrefix(const QString& version)
+{
+    const auto v = version.trimmed();
+    return v.startsWith('v', Qt::CaseInsensitive) ? v : QStringLiteral("v") + v;
+}
+
+static QString normalizedVersion(QString version)
+{
+    version = version.trimmed();
+    if (version.startsWith('v', Qt::CaseInsensitive)) {
+        version.remove(0, 1);
+    }
+    const auto dash = version.indexOf('-');
+    if (dash >= 0) {
+        version = version.left(dash);
+    }
+    return version;
+}
+
+static QVector<int> versionParts(const QString& version)
+{
+    QVector<int> out;
+    const auto parts = normalizedVersion(version).split('.', Qt::SkipEmptyParts);
+    for (const auto& part : parts) {
+        bool ok = false;
+        out.push_back(part.toInt(&ok));
+        if (!ok) {
+            out.last() = 0;
+        }
+    }
+    while (out.size() < 3) {
+        out.push_back(0);
+    }
+    return out;
+}
+
+static int compareVersions(const QString& a, const QString& b)
+{
+    const auto av = versionParts(a);
+    const auto bv = versionParts(b);
+    const int count = qMax(av.size(), bv.size());
+    for (int i = 0; i < count; ++i) {
+        const int ai = i < av.size() ? av.at(i) : 0;
+        const int bi = i < bv.size() ? bv.at(i) : 0;
+        if (ai != bi) {
+            return ai < bi ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
+static QString readBundledChangelog()
+{
+    QFile file(QStringLiteral(":/docs/CHANGELOG.md"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+    return QString::fromUtf8(file.readAll());
+}
+
+static QString changelogForVersion(const QString& changelog, const QString& version)
+{
+    const QString wanted = normalizedVersion(version);
+    const auto lines = changelog.split('\n');
+    const QRegularExpression heading(QStringLiteral("^##\\s+v?([^\\s(]+).*"));
+    QStringList out;
+    bool collecting = false;
+
+    for (const auto& rawLine : lines) {
+        const auto line = rawLine.trimmed();
+        const auto match = heading.match(line);
+        if (match.hasMatch()) {
+            if (collecting) {
+                break;
+            }
+            collecting = (normalizedVersion(match.captured(1)) == wanted);
+            continue;
+        }
+        if (collecting) {
+            out << rawLine;
+        }
+    }
+
+    return out.join('\n').trimmed();
+}
+
+static QString bestDownloadUrl(const QJsonObject& release)
+{
+    const auto assets = release.value(QStringLiteral("assets")).toArray();
+    QString fallback;
+    for (const auto& item : assets) {
+        const auto asset = item.toObject();
+        const auto name = asset.value(QStringLiteral("name")).toString();
+        const auto url = asset.value(QStringLiteral("browser_download_url")).toString();
+        if (url.isEmpty()) {
+            continue;
+        }
+        if (fallback.isEmpty()) {
+            fallback = url;
+        }
+        if (name.contains(QStringLiteral("Setup"), Qt::CaseInsensitive) && name.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive)) {
+            return url;
+        }
+        if (name.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive)) {
+            fallback = url;
+        }
+    }
+    return fallback;
+}
+
+static QString buildQrPayload(const QVector<DeviceInfo>& devices)
+{
+    QStringList sns;
+    for (const auto& d : devices) {
+        const auto sn = d.sn.trimmed();
+        if (!sn.isEmpty()) {
+            sns << sn;
+        }
+    }
+
+    if (sns.size() <= 1) {
+        return sns.isEmpty() ? QString{} : sns.first();
+    }
+
+    QString payload = QStringLiteral("deviceSns");
+    for (const auto& sn : sns) {
+        payload += sn + QStringLiteral(",");
+    }
+    return payload;
+}
+
+class ClickableLabel : public QLabel {
+public:
+    using QLabel::QLabel;
+    std::function<void()> onClicked;
+
+protected:
+    void mouseReleaseEvent(QMouseEvent* event) override
+    {
+        QLabel::mouseReleaseEvent(event);
+        if (event->button() == Qt::LeftButton && onClicked) {
+            onClicked();
+        }
+    }
+};
 
 class CenteredCheckDelegate : public QStyledItemDelegate {
 public:
@@ -72,7 +244,7 @@ public:
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 {
-    setWindowTitle(QStringLiteral("PortProbeQt"));
+    setWindowTitle(QStringLiteral("探测工具"));
     resize(1180, 780);
 
     auto* central = new QWidget(this);
@@ -111,6 +283,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     _model = new DeviceTableModel(this);
     _detectWatcher = new QFutureWatcher<SearchResult>(this);
+    _updateManager = new QNetworkAccessManager(this);
+    _versionBlinkTimer = new QTimer(this);
+    _versionBlinkTimer->setInterval(560);
+    connect(_versionBlinkTimer, &QTimer::timeout, this, [this]() {
+        _versionBlinkOn = !_versionBlinkOn;
+        applyUpdateState();
+    });
+
     _table = new QTableView(central);
     _table->setModel(_model);
     _table->setSelectionBehavior(QAbstractItemView::SelectItems);
@@ -166,6 +346,24 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     v->addWidget(topBar);
     v->addWidget(_status);
     v->addWidget(_table, 1);
+
+    auto* bottomBar = new QWidget(central);
+    auto* bottom = new QHBoxLayout(bottomBar);
+    bottom->setContentsMargins(0, 0, 0, 0);
+    bottom->setSpacing(0);
+    auto* version = new ClickableLabel(withVersionPrefix(currentVersion()), bottomBar);
+    version->setObjectName("versionLabel");
+    version->setCursor(Qt::PointingHandCursor);
+    version->setToolTip(QStringLiteral("查看版本与更新"));
+    version->setMinimumHeight(18);
+    version->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    version->onClicked = [this]() { openUpdateDialog(); };
+    _versionLabel = version;
+    bottom->addWidget(_versionLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    bottom->addStretch(1);
+    bottomBar->setLayout(bottom);
+    v->addWidget(bottomBar);
+
     central->setLayout(v);
     setCentralWidget(central);
 
@@ -221,6 +419,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     _cfg = store.load();
 
     refreshInterfaces();
+    applyUpdateState();
+    QTimer::singleShot(1200, this, [this]() { checkForUpdates(false); });
 }
 
 void MainWindow::setBusy(bool busy, const QString& text)
@@ -324,18 +524,12 @@ void MainWindow::generateQr()
         return;
     }
 
-    QStringList sns;
-    for (const auto& d : selected) {
-        if (!d.sn.trimmed().isEmpty()) {
-            sns << d.sn.trimmed();
-        }
-    }
-    if (sns.isEmpty()) {
+    const QString payload = buildQrPayload(selected);
+    if (payload.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("勾选设备缺少有效 SN，无法生成二维码"));
         return;
     }
 
-    const QString payload = sns.join(",");
     QrCodeDialog dlg(payload, this);
     dlg.exec();
 }
@@ -359,6 +553,274 @@ void MainWindow::copyRow()
         cols << _model->data(_model->index(row, c), Qt::DisplayRole).toString();
     }
     QApplication::clipboard()->setText(cols.join("\t"));
+}
+
+void MainWindow::openUpdateDialog()
+{
+    if (_updateDialog) {
+        _updateDialog->raise();
+        _updateDialog->activateWindow();
+        return;
+    }
+
+    _updateDialog = new QDialog(this);
+    _updateDialog->setWindowTitle(QStringLiteral("版本更新"));
+    _updateDialog->setWindowModality(Qt::ApplicationModal);
+    _updateDialog->setAttribute(Qt::WA_DeleteOnClose);
+    _updateDialog->resize(520, 420);
+
+    auto* layout = new QVBoxLayout(_updateDialog);
+    layout->setContentsMargins(16, 16, 16, 14);
+    layout->setSpacing(10);
+
+    _updateInfoLabel = new QLabel(_updateDialog);
+    _updateInfoLabel->setWordWrap(true);
+    _updateInfoLabel->setMinimumHeight(42);
+
+    _updateLog = new QTextEdit(_updateDialog);
+    _updateLog->setReadOnly(true);
+    _updateLog->setMinimumHeight(250);
+    _updateLog->setAcceptRichText(false);
+
+    auto* buttons = new QHBoxLayout();
+    buttons->setContentsMargins(0, 0, 0, 0);
+    buttons->setSpacing(8);
+    _checkUpdateButton = new QPushButton(QStringLiteral("检测更新"), _updateDialog);
+    _updateButton = new QPushButton(QStringLiteral("更新"), _updateDialog);
+    auto* closeButton = new QPushButton(QStringLiteral("关闭"), _updateDialog);
+    buttons->addWidget(_checkUpdateButton);
+    buttons->addStretch(1);
+    buttons->addWidget(_updateButton);
+    buttons->addWidget(closeButton);
+
+    layout->addWidget(_updateInfoLabel);
+    layout->addWidget(_updateLog, 1);
+    layout->addLayout(buttons);
+
+    connect(_checkUpdateButton, &QPushButton::clicked, this, [this]() { checkForUpdates(true); });
+    connect(_updateButton, &QPushButton::clicked, this, &MainWindow::openLatestRelease);
+    connect(closeButton, &QPushButton::clicked, _updateDialog, &QDialog::close);
+    connect(_updateDialog, &QObject::destroyed, this, [this]() {
+        _updateDialog = nullptr;
+        _updateInfoLabel = nullptr;
+        _updateLog = nullptr;
+        _updateButton = nullptr;
+        _checkUpdateButton = nullptr;
+    });
+
+    refreshUpdateDialog();
+    _updateDialog->show();
+}
+
+void MainWindow::checkForUpdates()
+{
+    checkForUpdates(true);
+}
+
+void MainWindow::checkForUpdates(bool userInitiated)
+{
+    if (_checkingUpdate || !_updateManager) {
+        refreshUpdateDialog();
+        return;
+    }
+
+    _checkingUpdate = true;
+    _updateError.clear();
+    _latestChangelog.clear();
+    applyUpdateState();
+    refreshUpdateDialog();
+
+    QNetworkRequest req(QUrl(QString::fromLatin1(kReleaseApiUrl)));
+    req.setRawHeader("Accept", "application/vnd.github+json");
+    req.setRawHeader("User-Agent", "ProbeTool");
+    auto* reply = _updateManager->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, userInitiated]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            _checkingUpdate = false;
+            _updateError = QStringLiteral("检测更新失败：%1").arg(reply->errorString());
+            if (_latestVersion.isEmpty()) {
+                _hasUpdate = false;
+                setVersionFlash(false);
+            }
+            applyUpdateState();
+            refreshUpdateDialog();
+            if (userInitiated && !_updateDialog) {
+                QMessageBox::warning(this, QStringLiteral("检测更新"), _updateError);
+            }
+            return;
+        }
+
+        QJsonParseError parseError {};
+        const auto doc = QJsonDocument::fromJson(reply->readAll(), &parseError);
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            _checkingUpdate = false;
+            _updateError = QStringLiteral("检测更新失败：版本信息解析失败");
+            _hasUpdate = false;
+            setVersionFlash(false);
+            applyUpdateState();
+            refreshUpdateDialog();
+            return;
+        }
+
+        const auto obj = doc.object();
+        _latestVersion = obj.value(QStringLiteral("tag_name")).toString();
+        _latestReleaseUrl = obj.value(QStringLiteral("html_url")).toString();
+        _latestReleaseBody = obj.value(QStringLiteral("body")).toString().trimmed();
+        _latestDownloadUrl = bestDownloadUrl(obj);
+        _hasUpdate = compareVersions(_latestVersion, currentVersion()) > 0;
+
+        if (!_hasUpdate) {
+            _checkingUpdate = false;
+            _latestChangelog = changelogForVersion(readBundledChangelog(), currentVersion());
+            _updateError.clear();
+            setVersionFlash(false);
+            applyUpdateState();
+            refreshUpdateDialog();
+            return;
+        }
+
+        setVersionFlash(true);
+        applyUpdateState();
+        refreshUpdateDialog();
+
+        QNetworkRequest changelogReq(QUrl(QString::fromLatin1(kChangelogUrl)));
+        changelogReq.setRawHeader("User-Agent", "ProbeTool");
+        auto* changelogReply = _updateManager->get(changelogReq);
+        connect(changelogReply, &QNetworkReply::finished, this, [this, changelogReply]() {
+            changelogReply->deleteLater();
+            if (changelogReply->error() == QNetworkReply::NoError) {
+                const auto changelogText = QString::fromUtf8(changelogReply->readAll());
+                _latestChangelog = changelogForVersion(changelogText, _latestVersion);
+            }
+            if (_latestChangelog.trimmed().isEmpty()) {
+                _latestChangelog = _latestReleaseBody.trimmed();
+            }
+            if (_latestChangelog.trimmed().isEmpty()) {
+                _latestChangelog = QStringLiteral("暂无更新日志。");
+            }
+            _checkingUpdate = false;
+            _updateError.clear();
+            applyUpdateState();
+            refreshUpdateDialog();
+        });
+    });
+}
+
+void MainWindow::applyUpdateState()
+{
+    if (!_versionLabel) {
+        return;
+    }
+
+    QString text = withVersionPrefix(currentVersion());
+    if (_checkingUpdate) {
+        text += QStringLiteral("  检测中");
+    } else if (_hasUpdate) {
+        text += QStringLiteral("  有新版本");
+    }
+    _versionLabel->setText(text);
+
+    if (_hasUpdate) {
+        const QString bg = _versionBlinkOn ? QStringLiteral("#ffcf42") : QStringLiteral("#fff0a8");
+        _versionLabel->setStyleSheet(QStringLiteral(
+            "QLabel#versionLabel {"
+            "background:%1;"
+            "color:#5a3b00;"
+            "border:1px solid #e1a600;"
+            "border-radius:3px;"
+            "padding:1px 7px;"
+            "font-weight:600;"
+            "}"
+        ).arg(bg));
+        return;
+    }
+
+    _versionLabel->setStyleSheet(QStringLiteral(
+        "QLabel#versionLabel {"
+        "background:transparent;"
+        "color:#53657d;"
+        "border:1px solid transparent;"
+        "border-radius:3px;"
+        "padding:1px 7px;"
+        "}"
+        "QLabel#versionLabel:hover {"
+        "background:#eaf1ff;"
+        "color:#1d4ed8;"
+        "border-color:#c8d8f3;"
+        "}"
+    ));
+}
+
+void MainWindow::refreshUpdateDialog()
+{
+    if (!_updateDialog) {
+        return;
+    }
+
+    QString info = QStringLiteral("当前版本：%1").arg(withVersionPrefix(currentVersion()));
+    if (_checkingUpdate) {
+        info += QStringLiteral("\n正在检测更新...");
+    } else if (!_updateError.isEmpty()) {
+        info += QStringLiteral("\n%1").arg(_updateError);
+    } else if (!_latestVersion.isEmpty()) {
+        info += QStringLiteral("\n最新版本：%1").arg(withVersionPrefix(_latestVersion));
+        info += _hasUpdate ? QStringLiteral("，发现可用更新。") : QStringLiteral("，当前已是最新版本。");
+    } else {
+        info += QStringLiteral("\n尚未检测更新。");
+    }
+
+    if (_updateInfoLabel) {
+        _updateInfoLabel->setText(info);
+    }
+
+    QString logText;
+    if (_checkingUpdate && _latestChangelog.isEmpty()) {
+        logText = QStringLiteral("正在获取版本信息...");
+    } else if (_hasUpdate) {
+        logText = _latestChangelog.trimmed().isEmpty() ? QStringLiteral("暂无更新日志。") : _latestChangelog;
+    } else {
+        logText = changelogForVersion(readBundledChangelog(), currentVersion());
+        if (logText.trimmed().isEmpty()) {
+            logText = QStringLiteral("暂无更新日志。");
+        }
+    }
+
+    if (_updateLog) {
+        _updateLog->setPlainText(logText);
+    }
+    if (_checkUpdateButton) {
+        _checkUpdateButton->setEnabled(!_checkingUpdate);
+        _checkUpdateButton->setText(_checkingUpdate ? QStringLiteral("检测中...") : QStringLiteral("检测更新"));
+    }
+    if (_updateButton) {
+        _updateButton->setEnabled(_hasUpdate && (!_latestDownloadUrl.isEmpty() || !_latestReleaseUrl.isEmpty()));
+    }
+}
+
+void MainWindow::setVersionFlash(bool enabled)
+{
+    if (!_versionBlinkTimer) {
+        return;
+    }
+    _versionBlinkOn = false;
+    if (enabled) {
+        if (!_versionBlinkTimer->isActive()) {
+            _versionBlinkTimer->start();
+        }
+    } else {
+        _versionBlinkTimer->stop();
+    }
+}
+
+void MainWindow::openLatestRelease()
+{
+    const auto url = !_latestDownloadUrl.isEmpty() ? _latestDownloadUrl : _latestReleaseUrl;
+    if (url.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("更新"), QStringLiteral("暂无可用下载地址，请先检测更新。"));
+        return;
+    }
+    QDesktopServices::openUrl(QUrl(url));
 }
 
 } // namespace pp
