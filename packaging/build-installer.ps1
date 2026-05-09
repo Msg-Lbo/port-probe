@@ -47,7 +47,7 @@ if ($isccResolvedPath -notmatch "Inno Setup 5" -and $isccVersion.ProductName -no
 $issPath = Join-Path $PSScriptRoot "installer.iss"
 $appName = [string]::Concat([char[]](0x63A2, 0x6D4B, 0x5DE5, 0x5177))
 $appExeName = "$appName.exe"
-$outputBaseName = "${appName}_Setup_${Arch}_v${Version}"
+$outputBaseName = "ProbeTool_Setup_${Arch}_v${Version}"
 
 Push-Location $repoRoot
 try {

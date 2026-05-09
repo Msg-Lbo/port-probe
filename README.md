@@ -88,4 +88,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.p
 ```
 
 输出：
-- 安装包：`installer_output/探测工具_Setup_x64_v1.0.0.exe`
+- 安装包：`installer_output/ProbeTool_Setup_x64_v1.0.0.exe`
+- 压缩包：`dist/ProbeTool_x64_all_in_one.zip`

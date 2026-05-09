@@ -246,7 +246,7 @@ foreach ($r in $required) {
 Write-Host "Packed to $distDir"
 
 # Also generate a single-file distributable archive.
-$bundleName = "${appBaseName}_${Arch}_all_in_one.zip"
+$bundleName = "ProbeTool_${Arch}_all_in_one.zip"
 $bundlePath = Join-Path $distRoot $bundleName
 if (Test-Path $bundlePath) {
   Remove-Item $bundlePath -Force
