@@ -47,19 +47,15 @@ if ($Toolchain -eq "mingw") {
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 Get-ChildItem -Path $distDir -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-$exe = Join-Path $BuildDir "Release/$appExeName"
-if (!(Test-Path $exe)) {
-  # fallback for different generators
-  $exe = Join-Path $BuildDir $appExeName
-}
-if (!(Test-Path $exe)) {
-  $exe = Join-Path $BuildDir "Release/PortProbeQt.exe"
-}
-if (!(Test-Path $exe)) {
-  $exe = Join-Path $BuildDir "PortProbeQt.exe"
-}
-if (!(Test-Path $exe)) {
-  throw "$appExeName not found under build dir: $BuildDir"
+$exeCandidates = @(
+  (Join-Path $BuildDir "Release/PortProbeQt.exe"),
+  (Join-Path $BuildDir "PortProbeQt.exe"),
+  (Join-Path $BuildDir "Release/$appExeName"),
+  (Join-Path $BuildDir $appExeName)
+)
+$exe = $exeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (!$exe) {
+  throw "Application executable not found under build dir: $BuildDir"
 }
 
 Copy-Item $exe (Join-Path $distDir $appExeName) -Force
@@ -223,6 +219,13 @@ else {
   # Qt 5 MinGW loads OpenSSL at runtime for HTTPS requests such as update checks.
   # The OpenSSL DLLs shipped with the matching Qt MinGW toolchain live under opt\bin.
   $opensslCandidates = @()
+  $opensslToolRoots = @()
+  if ($env:IQTA_TOOLS) {
+    $opensslToolRoots += $env:IQTA_TOOLS
+  }
+  if ($qtToolsRoot -and (Test-Path $qtToolsRoot)) {
+    $opensslToolRoots += $qtToolsRoot
+  }
   foreach ($root in $mingwCandidates) {
     $opensslCandidates += $root
 
@@ -236,20 +239,37 @@ else {
       }
     }
   }
+  foreach ($root in ($opensslToolRoots | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique)) {
+    $toolBins = Get-ChildItem -Path $root -Recurse -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -eq "bin" -and $_.FullName -match "OpenSSL|openssl|win_?x64|Win64" } |
+      Select-Object -ExpandProperty FullName
+    if ($Arch -eq "x64") {
+      $toolBins = $toolBins | Where-Object { $_ -match "x64|Win64|win64" }
+    } else {
+      $toolBins = $toolBins | Where-Object { $_ -match "x86|Win32|win32" }
+    }
+    if ($toolBins) {
+      $opensslCandidates += $toolBins
+    }
+  }
 
   if ($Arch -eq "x64") {
     $opensslCandidates += @(
       "D:\Qt\Tools\mingw810_64\opt\bin",
       "D:\Qt\Tools\mingw1310_64\opt\bin",
+      "D:\Qt\Tools\OpenSSL\Win_x64\bin",
       "C:\Qt\Tools\mingw810_64\opt\bin",
       "C:\Qt\Tools\mingw1310_64\opt\bin",
+      "C:\Qt\Tools\OpenSSL\Win_x64\bin",
       "C:\Program Files\OpenSSL-Win64\bin",
       "C:\OpenSSL-Win64\bin"
     )
   } else {
     $opensslCandidates += @(
       "D:\Qt\Tools\mingw810_32\opt\bin",
+      "D:\Qt\Tools\OpenSSL\Win_x86\bin",
       "C:\Qt\Tools\mingw810_32\opt\bin",
+      "C:\Qt\Tools\OpenSSL\Win_x86\bin",
       "C:\Program Files (x86)\OpenSSL-Win32\bin",
       "C:\OpenSSL-Win32\bin"
     )

@@ -51,7 +51,7 @@ add_executable(PortProbeQt WIN32
 )
 
 set_target_properties(PortProbeQt PROPERTIES
-  OUTPUT_NAME "探测工具"
+  OUTPUT_NAME "PortProbeQt"
 )
 
 target_compile_definitions(PortProbeQt PRIVATE
