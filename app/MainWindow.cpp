@@ -59,7 +59,7 @@
 namespace pp {
 
 #ifndef APP_VERSION
-#define APP_VERSION "1.0.4"
+#define APP_VERSION "1.0.5"
 #endif
 
 static const char* kReleaseApiUrl = "https://api.github.com/repos/Msg-Lbo/port-probe/releases/latest";
@@ -947,6 +947,10 @@ void MainWindow::refreshUpdateDialog()
     }
 
     QString info = QStringLiteral("当前版本：%1").arg(withVersionPrefix(currentVersion()));
+    const auto sourceUrl = configuredUpdateManifestUrl();
+    if (!sourceUrl.isEmpty()) {
+        info += QStringLiteral("\n更新源：%1").arg(sourceUrl);
+    }
     if (_checkingUpdate) {
         info += QStringLiteral("\n正在检测更新...");
     } else if (!_updateError.isEmpty()) {

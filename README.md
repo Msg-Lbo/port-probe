@@ -84,11 +84,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/pack.ps1" -Arch x
 
 #### 3) 生成单文件安装包（Inno Setup 5）
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.ps1" -Arch x64 -Version 1.0.4 -IsccPath "D:/Inno Setup 5/ISCC.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File "packaging/build-installer.ps1" -Arch x64 -Version 1.0.5 -IsccPath "D:/Inno Setup 5/ISCC.exe"
 ```
 
 输出：
-- 安装包：`installer_output/ProbeTool_Setup_x64_v1.0.4.exe`
+- 安装包：`installer_output/ProbeTool_Setup_x64_v1.0.5.exe`
 - 压缩包：`dist/ProbeTool_x64_all_in_one.zip`
 
 ### 在线更新源配置
